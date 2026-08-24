@@ -1,0 +1,6 @@
+com\foodorder\kitchenservice\model\OrderEvent.class
+com\foodorder\kitchenservice\KitchenServiceApplication.class
+com\foodorder\kitchenservice\config\KafkaErrorHandlingConfig.class
+com\foodorder\kitchenservice\kafka\OrderProcessor.class
+com\foodorder\kitchenservice\model\OrderReadyEvent.class
+com\foodorder\kitchenservice\config\KafkaConsumerConfig.class

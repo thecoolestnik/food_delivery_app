@@ -1,0 +1,5 @@
+com\foodorder\orderservice\dto\OrderRequest.class
+com\foodorder\orderservice\kafka\OrderProducer.class
+com\foodorder\orderservice\model\OrderEvent.class
+com\foodorder\orderservice\OrderServiceApplication.class
+com\foodorder\orderservice\controller\OrderController.class

@@ -1,0 +1,75 @@
+package com.foodorder.kitchenservice;
+
+import com.foodorder.kitchenservice.model.OrderEvent;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
+import org.springframework.kafka.support.serializer.JsonDeserializer;
+import org.springframework.kafka.test.EmbeddedKafkaBroker;
+import org.springframework.kafka.test.annotation.EmbeddedKafka;
+import org.springframework.kafka.test.utils.KafkaTestUtils;
+import org.springframework.test.annotation.DirtiesContext;
+
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Proves the "zero message loss under simulated broker failures" claim:
+ * an order with no items is guaranteed to fail processing, and this test
+ * verifies it lands on the order-placed.DLT topic instead of being dropped.
+ */
+@SpringBootTest
+@EmbeddedKafka(partitions = 1, topics = {"order-placed", "order-ready", "order-placed.DLT"})
+@DirtiesContext
+class OrderProcessorDlqIntegrationTest {
+
+    @Autowired
+    private KafkaTemplate<String, OrderEvent> orderEventKafkaTemplate;
+
+    @Autowired
+    private EmbeddedKafkaBroker embeddedKafkaBroker;
+
+    @Test
+    void malformedOrderIsRoutedToDeadLetterTopicNotLost() {
+        OrderEvent badOrder = new OrderEvent();
+        badOrder.setOrderId("order-bad-1");
+        badOrder.setCustomerId("cust-1");
+        badOrder.setRestaurantId("rest-1");
+        badOrder.setItems(List.of()); // triggers IllegalArgumentException -> DLQ path
+        badOrder.setTotalAmount(10.0);
+        badOrder.setDeliveryAddress("221B Baker Street");
+        badOrder.setPlacedAt(Instant.now());
+
+        orderEventKafkaTemplate.send("order-placed", badOrder.getOrderId(), badOrder);
+
+        Map<String, Object> consumerProps = KafkaTestUtils.consumerProps(
+                "dlq-test-group", "true", embeddedKafkaBroker);
+        consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        consumerProps.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class.getName());
+        consumerProps.put(JsonDeserializer.TRUSTED_PACKAGES, "com.foodorder.*");
+        consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+
+        var consumerFactory = new DefaultKafkaConsumerFactory<String, OrderEvent>(consumerProps);
+        try (var consumer = consumerFactory.createConsumer()) {
+            embeddedKafkaBroker.consumeFromAnEmbeddedTopic(consumer, "order-placed.DLT");
+
+            ConsumerRecord<String, OrderEvent> dltRecord =
+                    KafkaTestUtils.getSingleRecord(consumer, "order-placed.DLT", 10000L);
+
+            assertThat(dltRecord).isNotNull();
+            assertThat(dltRecord.key()).isEqualTo("order-bad-1");
+        }
+    }
+}

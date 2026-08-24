@@ -1,0 +1,5 @@
+com\foodorder\enduserservice\kafka\NotificationListener.class
+com\foodorder\enduserservice\config\KafkaConsumerConfig.class
+com\foodorder\enduserservice\config\KafkaErrorHandlingConfig.class
+com\foodorder\enduserservice\EnduserServiceApplication.class
+com\foodorder\enduserservice\model\DeliveryAssignedEvent.class
